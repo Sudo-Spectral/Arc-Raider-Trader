@@ -1,0 +1,30 @@
+{
+  "name": "arc-raider-trader-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Arc Raiders trading threads and seller ratings",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "register": "tsx scripts/registerCommands.ts",
+    "scrape:items": "tsx scripts/scrapeItems.ts",
+  "test": "vitest run tests/itemMatcher.test.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "fast-fuzzy": "^1.12.0",
+    "fs-extra": "^11.2.0",
+    "nanoid": "^5.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@types/fs-extra": "^11.0.4",
+  "ts-node": "^10.9.2",
+  "tsx": "^4.7.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.2.2"
+  }
+}
