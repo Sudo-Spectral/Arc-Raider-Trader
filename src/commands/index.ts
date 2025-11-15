@@ -1,4 +1,5 @@
 import {
+	ChannelType,
 	ChatInputCommandInteraction,
 	PermissionFlagsBits,
 	SlashCommandBuilder,
@@ -80,6 +81,7 @@ export const tradeCommand: CommandDefinition = {
 			const threadName = `trade-${seller.username.slice(0, 15)}-to-${buyer.username.slice(0, 15)}`.toLowerCase();
 			const thread = await channel.threads.create({
 				name: threadName,
+				type: ChannelType.PrivateThread,
 				autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
 				reason: `Trade between ${seller.tag} and ${buyer.tag}`,
 				invitable: false,
