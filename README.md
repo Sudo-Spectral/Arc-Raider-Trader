@@ -5,8 +5,8 @@ Discord bot for Arc Raiders trading communities. It opens moderated trade thread
 ## Features
 
 - `/trade` command that spins up a private thread between seller and buyer, logging matched items, notes, and optional pricing.
-- `/tradeedit` lets sellers correct the recorded items if they made a typo—either by referencing the trade ID or running it inside the thread.
-- Automatic fuzzy matching against the entire [Arc Raiders items list](https://arc-raiders.fandom.com/wiki/Items) scraped via `npm run scrape:items`.
+- `/tradeedit` lets sellers correct the recorded items if they made a typo, either by referencing the trade ID or running it inside the thread
+- Automatic fuzzy matching against the entire ~~[Arc Raiders items list](https://arc-raiders.fandom.com/wiki/Items)~~ scraped via `npm run scrape:items`.
 - `/rate` command buyers use inside the thread (or with an ID) to log positive/negative feedback.
 - `/seller` command that shows a seller's aggregated reputation.
 - JSON storage for trades and ratings with nanoid identifiers.
@@ -61,7 +61,7 @@ npm start
 
 ## Usage
 
-1. `/trade buyer:@User item:"Arc powercell" price:"25k" notes:"Include shipment"`
+1. `/trade buyer:@User item:"Arc powercell" price:"25"(seeds) notes:"Whatever is relevant for trade"`
    - Bot creates `trade-seller-to-buyer` thread, invites both members, and logs matches.
 2. `/tradeedit items:"Arc Powercell, ARC Motion Core"` (inside the trade thread or with `trade_id:ABC123`)
    - Updates the stored item list, re-runs fuzzy matching, and posts a correction note in the thread.
