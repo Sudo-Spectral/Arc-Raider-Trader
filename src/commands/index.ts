@@ -20,6 +20,7 @@ import {
 	syncTradeRatingState,
 	tradeStore,
 } from "../services/core.js";
+import { acquireInteractionLock } from "../services/interactionLock.js";
 import { RatingRecord, RatingTargetRole, TradeRecord } from "../types.js";
 
 export interface CommandDefinition {
@@ -59,6 +60,15 @@ export const tradeCommand: CommandDefinition = {
 		)
 		.setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
 	async execute(interaction) {
+		const interactionLock = await acquireInteractionLock(interaction.id);
+		if (!interactionLock) {
+			await interaction.reply({
+				content: "I'm already processing that trade request. Please give me a moment and try again if needed.",
+				ephemeral: true,
+			});
+			return;
+		}
+
 		const buyer = interaction.options.getUser("buyer", true);
 		const itemInput = interaction.options.getString("item", true);
 		const seller = interaction.user;
@@ -78,6 +88,15 @@ export const tradeCommand: CommandDefinition = {
 		const matchSummary = formatMatchedItems(matches);
 
 		try {
+			const existingTrade = await tradeStore.getByInteractionId(interaction.id);
+			if (existingTrade) {
+				await interaction.reply({
+					content: `This trade already exists in <#${existingTrade.threadId}> with ID **${existingTrade.id}**. Share that ID with the buyer for rating.`,
+					ephemeral: true,
+				});
+				return;
+			}
+
 			const tradeId = nanoid(10);
 			const channel = await resolveTradeChannel(interaction);
 			const threadName = `trade-${seller.username.slice(0, 15)}-to-${buyer.username.slice(0, 15)}`.toLowerCase();
@@ -106,6 +125,7 @@ export const tradeCommand: CommandDefinition = {
 
 			const trade: TradeRecord = {
 				id: tradeId,
+				interactionId: interaction.id,
 				sellerId: seller.id,
 				buyerId: buyer.id,
 				createdAt: new Date().toISOString(),
@@ -136,6 +156,8 @@ export const tradeCommand: CommandDefinition = {
 			} else {
 				await interaction.reply({ content: message, ephemeral: true });
 			}
+		} finally {
+			await interactionLock.release();
 		}
 	},
 };

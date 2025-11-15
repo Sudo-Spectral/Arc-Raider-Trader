@@ -9,6 +9,7 @@ export interface TradeItemMatch {
 
 export interface TradeRecord {
   id: string;
+  interactionId?: string;
   sellerId: string;
   buyerId: string;
   createdAt: string;

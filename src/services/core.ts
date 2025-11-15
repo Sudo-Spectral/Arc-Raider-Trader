@@ -67,6 +67,11 @@ export class TradeStore {
     return trades.find((trade) => trade.threadId === threadId);
   }
 
+  async getByInteractionId(interactionId: string): Promise<TradeRecord | undefined> {
+    const trades = await this.store.read();
+    return trades.find((trade) => trade.interactionId === interactionId);
+  }
+
   async save(trade: TradeRecord): Promise<void> {
     await this.store.update((trades) => {
       trades.push(trade);

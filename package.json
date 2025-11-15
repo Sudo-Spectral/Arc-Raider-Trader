@@ -2,12 +2,12 @@
   "name": "arc-raider-trader-bot",
   "version": "1.0.0",
   "description": "Discord bot for Arc Raiders trading threads and seller ratings",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+  "start": "node dist/src/index.js",
     "register": "tsx scripts/registerCommands.ts",
     "scrape:items": "tsx scripts/scrapeItems.ts",
   "test": "vitest run tests/itemMatcher.test.ts"

@@ -32,6 +32,7 @@ Thumbs.db
 # Runtime data that regenerates locally
 /data/ratings.json
 /data/trades.json
+/data/locks/
 
 # Miscellaneous
 *.bak
