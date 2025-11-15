@@ -5,11 +5,12 @@ import {
   ButtonStyle,
   ChannelType,
   ChatInputCommandInteraction,
+  Client,
   TextChannel,
 } from "discord.js";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { RatingRecord, RatingSummary, TradeItemMatch, TradeRecord } from "../types.js";
+import { RatingRecord, RatingSummary, RatingTargetRole, TradeItemMatch, TradeRecord } from "../types.js";
 
 const { ensureDir, readJSON, writeJSON } = fs;
 const __filename = fileURLToPath(import.meta.url);
@@ -96,9 +97,13 @@ export class RatingStore {
     return this.store.read();
   }
 
-  async findByTradeId(tradeId: string): Promise<RatingRecord | undefined> {
+  async findByTradeAndRole(tradeId: string, targetRole: RatingTargetRole): Promise<RatingRecord | undefined> {
     const ratings = await this.store.read();
-    return ratings.find((rating) => rating.tradeId === tradeId);
+    return ratings.find((rating) => rating.tradeId === tradeId && rating.targetRole === targetRole);
+  }
+
+  async hasRating(tradeId: string, targetRole: RatingTargetRole): Promise<boolean> {
+    return Boolean(await this.findByTradeAndRole(tradeId, targetRole));
   }
 
   async add(rating: RatingRecord): Promise<void> {
@@ -107,13 +112,13 @@ export class RatingStore {
     });
   }
 
-  async summaryForSeller(sellerId: string): Promise<RatingSummary> {
+  async summaryForUser(userId: string): Promise<RatingSummary> {
     const ratings = await this.store.read();
-    const sellerRatings = ratings.filter((rating) => rating.sellerId === sellerId);
-    const totalPositive = sellerRatings.filter((r) => r.rating === 1).length;
-    const totalNegative = sellerRatings.filter((r) => r.rating === -1).length;
+    const userRatings = ratings.filter((rating) => rating.targetUserId === userId);
+    const totalPositive = userRatings.filter((r) => r.rating === 1).length;
+    const totalNegative = userRatings.filter((r) => r.rating === -1).length;
     return {
-      sellerId,
+      userId,
       totalPositive,
       totalNegative,
       score: totalPositive - totalNegative,
@@ -123,6 +128,34 @@ export class RatingStore {
 
 export const tradeStore = new TradeStore();
 export const ratingStore = new RatingStore();
+
+export async function syncTradeRatingState(trade: TradeRecord) {
+  const [sellerRated, buyerRated] = await Promise.all([
+    ratingStore.hasRating(trade.id, "seller"),
+    ratingStore.hasRating(trade.id, "buyer"),
+  ]);
+  const completed = sellerRated && buyerRated;
+  await tradeStore.update(trade.id, (record) => {
+    record.status = completed ? "completed" : "awaiting_rating";
+  });
+  trade.status = completed ? "completed" : "awaiting_rating";
+  return { sellerRated, buyerRated, completed };
+}
+
+export async function lockTradeThread(client: Client, trade: TradeRecord, reason?: string) {
+  const channel = await client.channels.fetch(trade.threadId).catch(() => null);
+  if (!channel || !channel.isThread()) {
+    return;
+  }
+
+  if (!channel.locked) {
+    await channel.setLocked(true);
+  }
+
+  if (!channel.archived) {
+    await channel.setArchived(true, reason ?? `Trade ${trade.id} fully reviewed.`);
+  }
+}
 
 export async function resolveTradeChannel(interaction: ChatInputCommandInteraction): Promise<TextChannel> {
   const channelId = process.env.TRADES_CHANNEL_ID ?? interaction.channelId;
@@ -164,19 +197,34 @@ export function buildCompleteButton(tradeId: string, disabled = false) {
   );
 }
 
-export function buildRatingButtons(tradeId: string, disabled = false) {
+export function buildRatingButtons(
+  tradeId: string,
+  targetRole: RatingTargetRole,
+  disabled = false
+) {
+  const labelPrefix = targetRole === "seller" ? "Buyer review" : "Seller review";
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`trade:rate:${tradeId}:positive`)
-      .setLabel("Positive")
+      .setCustomId(`trade:rate:${tradeId}:${targetRole}:positive`)
+      .setLabel(`${labelPrefix}: Positive`)
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled),
     new ButtonBuilder()
-      .setCustomId(`trade:rate:${tradeId}:negative`)
-      .setLabel("Negative")
+      .setCustomId(`trade:rate:${tradeId}:${targetRole}:negative`)
+      .setLabel(`${labelPrefix}: Negative`)
       .setStyle(ButtonStyle.Danger)
       .setDisabled(disabled)
   );
+}
+
+export function buildAllRatingComponents(
+  tradeId: string,
+  completion: Partial<Record<RatingTargetRole, boolean>> = {}
+) {
+  return [
+    buildRatingButtons(tradeId, "seller", completion.seller ?? false),
+    buildRatingButtons(tradeId, "buyer", completion.buyer ?? false),
+  ];
 }
 
 export function formatMatchedItems(matches: TradeItemMatch[]): string {

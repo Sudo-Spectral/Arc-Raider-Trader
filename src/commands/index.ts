@@ -14,11 +14,13 @@ import {
 	buildCompleteButton,
 	findTradeForInteraction,
 	formatMatchedItems,
+	lockTradeThread,
 	ratingStore,
 	resolveTradeChannel,
+	syncTradeRatingState,
 	tradeStore,
 } from "../services/core.js";
-import { RatingRecord, TradeRecord } from "../types.js";
+import { RatingRecord, RatingTargetRole, TradeRecord } from "../types.js";
 
 export interface CommandDefinition {
 	data: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder;
@@ -28,7 +30,7 @@ export interface CommandDefinition {
 function buildRatingOption(option: SlashCommandStringOption) {
 	return option
 		.setName("result")
-		.setDescription("How was the seller?")
+		.setDescription("How was this trade partner?")
 		.setRequired(true)
 		.addChoices(
 			{ name: "Positive", value: "positive" },
@@ -206,8 +208,17 @@ export const tradeEditCommand: CommandDefinition = {
 export const rateCommand: CommandDefinition = {
 	data: new SlashCommandBuilder()
 		.setName("rate")
-		.setDescription("Rate a seller after the item has been delivered")
+		.setDescription("Review your trade partner once everything is delivered")
 		.addStringOption((option: SlashCommandStringOption) => buildRatingOption(option))
+		.addStringOption((option: SlashCommandStringOption) =>
+			option
+				.setName("target")
+				.setDescription("Who are you reviewing? Defaults to the other participant.")
+				.addChoices(
+					{ name: "Seller", value: "seller" },
+					{ name: "Buyer", value: "buyer" }
+				)
+		)
 		.addStringOption((option: SlashCommandStringOption) =>
 			option.setName("trade_id").setDescription("Trade ID (optional if you run this inside the thread)")
 		)
@@ -225,18 +236,26 @@ export const rateCommand: CommandDefinition = {
 			return;
 		}
 
-		if (trade.buyerId !== interaction.user.id) {
+		const targetPreference = interaction.options.getString("target") as RatingTargetRole | null;
+		const targetRole = resolveTargetRoleForUser(trade, interaction.user.id, targetPreference);
+		if (!targetRole) {
 			await interaction.reply({
-				content: "Only the buyer recorded in the trade can rate this seller!",
+				content: "You need to be the seller or buyer on this trade to leave a review.",
 				ephemeral: true,
 			});
 			return;
 		}
 
-		const existingRating = await ratingStore.findByTradeId(trade.id);
+		const expectedReviewerId = targetRole === "seller" ? trade.buyerId : trade.sellerId;
+		if (interaction.user.id !== expectedReviewerId) {
+			await interaction.reply({ content: "You can only review your counterparty.", ephemeral: true });
+			return;
+		}
+
+		const existingRating = await ratingStore.findByTradeAndRole(trade.id, targetRole);
 		if (existingRating) {
 			await interaction.reply({
-				content: "This trade has already been rated. Contact a Union Rep if you need to contest it.",
+				content: "A review for that participant is already on file.",
 				ephemeral: true,
 			});
 			return;
@@ -244,25 +263,26 @@ export const rateCommand: CommandDefinition = {
 
 		const ratingValue = interaction.options.getString("result", true) === "positive" ? 1 : -1;
 		const comments = interaction.options.getString("comments") ?? undefined;
+		const targetUserId = targetRole === "seller" ? trade.sellerId : trade.buyerId;
+		const reviewerLabel = targetRole === "seller" ? "buyer" : "seller";
 
 		const rating: RatingRecord = {
 			id: nanoid(10),
 			tradeId: trade.id,
-			sellerId: trade.sellerId,
-			buyerId: trade.buyerId,
+			targetRole,
+			targetUserId,
+			reviewerUserId: interaction.user.id,
 			rating: ratingValue,
 			comments,
 			createdAt: new Date().toISOString(),
 		};
 
 		await ratingStore.add(rating);
-		await tradeStore.update(trade.id, (record) => {
-			record.status = "completed";
-		});
+		const ratingState = await syncTradeRatingState(trade);
 
 		const summary = ratingValue === 1 ? "✅ Positive" : "⚠️ Negative";
 		const replyLines = [
-			`${summary} rating recorded for <@${trade.sellerId}> by <@${trade.buyerId}>`,
+			`${summary} review for the ${targetRole} <@${targetUserId}> by the ${reviewerLabel} <@${interaction.user.id}>`,
 			`Trade ID: **${trade.id}**`,
 		];
 		if (comments) replyLines.push(`Comments: ${comments}`);
@@ -271,20 +291,24 @@ export const rateCommand: CommandDefinition = {
 			await interaction.channel.send(replyLines.join("\n"));
 		}
 
-		await interaction.reply({ content: "Your rating has been logged. Thank you!", ephemeral: true });
+		if (ratingState.completed) {
+			await lockTradeThread(interaction.client, trade);
+		}
+
+		await interaction.reply({ content: "Your review has been logged. Thank you!", ephemeral: true });
 	},
 };
 
 export const profileCommand: CommandDefinition = {
 	data: new SlashCommandBuilder()
 		.setName("seller")
-		.setDescription("Show a seller's reputation summary")
+		.setDescription("Show a trader's reputation summary")
 		.addUserOption((option: SlashCommandUserOption) =>
 			option.setName("user").setDescription("Seller to inspect")
 		),
 	async execute(interaction) {
 		const target = interaction.options.getUser("user") ?? interaction.user;
-		const summary = await ratingStore.summaryForSeller(target.id);
+		const summary = await ratingStore.summaryForUser(target.id);
 
 		await interaction.reply({
 			content: [
@@ -297,3 +321,21 @@ export const profileCommand: CommandDefinition = {
 		});
 	},
 };
+
+function resolveTargetRoleForUser(
+	trade: TradeRecord,
+	userId: string,
+	override?: RatingTargetRole | null
+): RatingTargetRole | null {
+	const isBuyer = userId === trade.buyerId;
+	const isSeller = userId === trade.sellerId;
+	if (!isBuyer && !isSeller) {
+		return null;
+	}
+
+	if (override) {
+		return override;
+	}
+
+	return isBuyer ? "seller" : "buyer";
+}

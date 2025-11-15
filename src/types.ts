@@ -22,18 +22,21 @@ export interface TradeRecord {
   summaryMessageId?: string;
 }
 
+export type RatingTargetRole = "seller" | "buyer";
+
 export interface RatingRecord {
   id: string;
   tradeId: string;
-  sellerId: string;
-  buyerId: string;
+  targetRole: RatingTargetRole;
+  targetUserId: string;
+  reviewerUserId: string;
   rating: 1 | -1;
   comments?: string;
   createdAt: string;
 }
 
 export interface RatingSummary {
-  sellerId: string;
+  userId: string;
   totalPositive: number;
   totalNegative: number;
   score: number;

@@ -6,13 +6,19 @@ import {
   Events,
   GatewayIntentBits,
   Interaction,
-  TextBasedChannel,
 } from "discord.js";
 import { nanoid } from "nanoid";
 import { profileCommand, rateCommand, tradeCommand, tradeEditCommand } from "./commands/index.js";
 import type { CommandDefinition } from "./commands/index.js";
-import { buildCompleteButton, buildRatingButtons, ratingStore, tradeStore } from "./services/core.js";
-import type { RatingRecord } from "./types.js";
+import {
+  buildAllRatingComponents,
+  buildCompleteButton,
+  lockTradeThread,
+  ratingStore,
+  syncTradeRatingState,
+  tradeStore,
+} from "./services/core.js";
+import type { RatingRecord, RatingTargetRole, TradeRecord } from "./types.js";
 
 const commands: CommandDefinition[] = [tradeCommand, tradeEditCommand, rateCommand, profileCommand];
 const commandCollection = new Collection<string, CommandDefinition>();
@@ -65,9 +71,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
 
   if (parts[1] === "rate") {
     const tradeId = parts[2];
-    const sentiment = parts[3];
-    if (sentiment === "positive" || sentiment === "negative") {
-      await handleRatingButton(interaction, tradeId, sentiment);
+    const targetRole = parts[3] as RatingTargetRole | undefined;
+    const sentiment = parts[4];
+    if (
+      tradeId &&
+      (targetRole === "seller" || targetRole === "buyer") &&
+      (sentiment === "positive" || sentiment === "negative")
+    ) {
+      await handleRatingButton(interaction, tradeId, targetRole, sentiment);
     }
   }
 }
@@ -93,14 +104,15 @@ async function handleCompleteButton(interaction: ButtonInteraction, tradeId: str
 
   const prompt = [
     `✅ ${interaction.user} marked this trade as complete.`,
-    `<@${trade.buyerId}>, please rate <@${trade.sellerId}> when you're ready:`,
+    `<@${trade.buyerId}>, share how the seller did.`,
+    `<@${trade.sellerId}>, let us know how the buyer performed.`,
   ].join("\n");
 
   const thread = await interaction.client.channels.fetch(trade.threadId).catch(() => null);
   if (thread && thread.isThread()) {
     await thread.send({
       content: prompt,
-      components: [buildRatingButtons(trade.id)],
+      components: buildAllRatingComponents(trade.id),
     });
   }
 }
@@ -108,6 +120,7 @@ async function handleCompleteButton(interaction: ButtonInteraction, tradeId: str
 async function handleRatingButton(
   interaction: ButtonInteraction,
   tradeId: string,
+  targetRole: RatingTargetRole,
   sentiment: "positive" | "negative"
 ) {
   const trade = await tradeStore.getById(tradeId);
@@ -116,14 +129,15 @@ async function handleRatingButton(
     return;
   }
 
-  if (interaction.user.id !== trade.buyerId) {
-    await interaction.reply({ content: "Only the recorded buyer can leave this rating.", ephemeral: true });
+  const expectedReviewerId = targetRole === "seller" ? trade.buyerId : trade.sellerId;
+  if (interaction.user.id !== expectedReviewerId) {
+    await interaction.reply({ content: "You're not allowed to submit this review.", ephemeral: true });
     return;
   }
 
-  const existingRating = await ratingStore.findByTradeId(trade.id);
+  const existingRating = await ratingStore.findByTradeAndRole(trade.id, targetRole);
   if (existingRating) {
-    await interaction.reply({ content: "This trade already has a rating.", ephemeral: true });
+    await interaction.reply({ content: "That review has already been logged.", ephemeral: true });
     return;
   }
 
@@ -131,29 +145,38 @@ async function handleRatingButton(
   const rating: RatingRecord = {
     id: nanoid(10),
     tradeId: trade.id,
-    sellerId: trade.sellerId,
-    buyerId: trade.buyerId,
+    targetRole,
+    targetUserId: targetRole === "seller" ? trade.sellerId : trade.buyerId,
+    reviewerUserId: interaction.user.id,
     rating: ratingValue,
     createdAt: new Date().toISOString(),
   };
 
   await ratingStore.add(rating);
-  await tradeStore.update(trade.id, (record) => {
-    record.status = "completed";
-  });
+  const ratingState = await syncTradeRatingState(trade);
 
-  await interaction.update({ components: [buildRatingButtons(trade.id, true)] });
+  await interaction.update({
+    components: buildAllRatingComponents(trade.id, {
+      seller: ratingState.sellerRated,
+      buyer: ratingState.buyerRated,
+    }),
+  });
   await interaction.followUp({ content: "Thanks! Your rating has been logged.", ephemeral: true });
 
   const summary = ratingValue === 1 ? "Positive" : "Negative";
+  const reviewerLabel = targetRole === "seller" ? "buyer" : "seller";
   const thread = await interaction.client.channels.fetch(trade.threadId).catch(() => null);
   if (thread && thread.isThread()) {
     await thread.send({
       content: [
-        `${summary} rating recorded for <@${trade.sellerId}> by <@${trade.buyerId}>`,
+        `${summary} rating for the ${targetRole} <@${rating.targetUserId}> by the ${reviewerLabel} <@${interaction.user.id}>`,
         `Trade ID: **${trade.id}**`,
       ].join("\n"),
     });
+  }
+
+  if (ratingState.completed) {
+    await lockTradeThread(interaction.client, trade);
   }
 }
 
