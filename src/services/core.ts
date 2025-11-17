@@ -1,4 +1,3 @@
-import fs from "fs-extra";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -11,91 +10,19 @@ import {
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { RatingRecord, RatingSummary, RatingTargetRole, TradeItemMatch, TradeRecord } from "../types.js";
-
-const { ensureDir, readJSON, writeJSON } = fs;
+import { TaskStore } from "./taskStore.js";
+import { JsonStore } from "./jsonStore.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, "..", "..");
-
-class JsonStore<T> {
-  constructor(private readonly filePath: string, private readonly defaultValue: T) {}
-
-  private async ensureFile(): Promise<void> {
-    await ensureDir(dirname(this.filePath));
-  }
-
-  async read(): Promise<T> {
-    await this.ensureFile();
-    try {
-      return (await readJSON(this.filePath)) as T;
-    } catch {
-      return this.defaultValue;
-    }
-  }
-
-  async write(data: T): Promise<void> {
-    await this.ensureFile();
-    await writeJSON(this.filePath, data, { spaces: 2 });
-  }
-
-  async update(mutator: (data: T) => void | Promise<void>): Promise<T> {
-    const current = await this.read();
-    await mutator(current);
-    await this.write(current);
-    return current;
-  }
-}
-
-export class TradeStore {
-  private store: JsonStore<TradeRecord[]>;
-
-  constructor(dataDir = "data") {
-    this.store = new JsonStore(join(rootDir, dataDir, "trades.json"), []);
-  }
-
-  async list(): Promise<TradeRecord[]> {
-    return this.store.read();
-  }
-
-  async getById(id: string): Promise<TradeRecord | undefined> {
-    const trades = await this.store.read();
-    return trades.find((trade) => trade.id === id);
-  }
-
-  async getByThreadId(threadId: string): Promise<TradeRecord | undefined> {
-    const trades = await this.store.read();
-    return trades.find((trade) => trade.threadId === threadId);
-  }
-
-  async getByInteractionId(interactionId: string): Promise<TradeRecord | undefined> {
-    const trades = await this.store.read();
-    return trades.find((trade) => trade.interactionId === interactionId);
-  }
-
-  async save(trade: TradeRecord): Promise<void> {
-    await this.store.update((trades) => {
-      trades.push(trade);
-    });
-  }
-
-  async update(id: string, updater: (trade: TradeRecord) => void): Promise<TradeRecord | undefined> {
-    let updated: TradeRecord | undefined;
-    await this.store.update((trades) => {
-      const index = trades.findIndex((trade) => trade.id === id);
-      if (index !== -1) {
-        updater(trades[index]);
-        updated = trades[index];
-      }
-    });
-    return updated;
-  }
-}
+const tradesPath = join(rootDir, "data", "trades.json");
+const ratingsPath = join(rootDir, "data", "ratings.json");
 
 export class RatingStore {
   private store: JsonStore<RatingRecord[]>;
 
-  constructor(dataDir = "data") {
-    this.store = new JsonStore(join(rootDir, dataDir, "ratings.json"), []);
+  constructor(filePath = ratingsPath) {
+    this.store = new JsonStore(filePath, []);
   }
 
   async list(): Promise<RatingRecord[]> {
@@ -131,7 +58,7 @@ export class RatingStore {
   }
 }
 
-export const tradeStore = new TradeStore();
+export const tradeStore = new TaskStore<TradeRecord>(tradesPath);
 export const ratingStore = new RatingStore();
 
 export async function syncTradeRatingState(trade: TradeRecord) {

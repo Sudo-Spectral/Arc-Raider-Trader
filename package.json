@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-  "start": "node dist/src/index.js",
+    "start": "node dist/src/index.js",
     "register": "tsx scripts/registerCommands.ts",
     "scrape:items": "tsx scripts/scrapeItems.ts",
-  "test": "vitest run tests/itemMatcher.test.ts"
+    "migrate:rep": "tsx scripts/migrateRatingsToRep.ts",
+    "test": "vitest run tests/itemMatcher.test.ts"
   },
   "dependencies": {
     "discord.js": "^14.15.3",
@@ -22,8 +23,8 @@
   "devDependencies": {
     "@types/node": "^20.11.17",
     "@types/fs-extra": "^11.0.4",
-  "ts-node": "^10.9.2",
-  "tsx": "^4.7.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.0",
     "typescript": "^5.4.5",
     "vitest": "^1.2.2"
   }

@@ -9,6 +9,8 @@ Discord bot for Arc Raiders trading communities. It opens moderated trade thread
 - Automatic fuzzy matching against the entire ~~[Arc Raiders items list](https://arc-raiders.fandom.com/wiki/Items)~~ scraped via `npm run scrape:items`.
 - `/rate` command buyers use inside the thread (or with an ID) to log positive/negative feedback.
 - `/seller` command that shows a seller's aggregated reputation.
+- `/escort` command that creates an escort mission thread between an escort and client, awarding +1 rep to both once completed.
+- Optional activity log channel that mirrors major trade, escort, and quest actions for auditability.
 - JSON storage for trades and ratings with nanoid identifiers.
 
 ## Project setup
@@ -33,6 +35,10 @@ DISCORD_TOKEN=your-bot-token
 CLIENT_ID=your-application-id
 GUILD_ID=primary-guild-id
 TRADES_CHANNEL_ID=text-channel-for-trades
+ESCORT_CHANNEL_ID=optional-text-channel-for-escort-threads
+QUEST_CHANNEL_ID=optional-text-channel-for-quests
+EVENT_CHANNEL_ID=optional-text-channel-for-event-announcements
+LOG_CHANNEL_ID=optional-text-channel-for-activity-logs
 ```
 
 Then register slash commands:
@@ -57,7 +63,12 @@ npm start
 ### Additional scripts
 
 - `npm run scrape:items`: Refresh the official item list and store it in `data/items.json`.
+- `npm run migrate:rep`: Backfill the new reputation ledger (`data/rep.json`) from existing `ratings.json` entries. Safe to rerun.
 - `npm test`: Run Vitest-based unit tests (currently focused on fuzzy matching).
+
+### Migrations
+
+- See `docs/migrations/2025-11-rep-ledger.md` for the step-by-step upgrade guide to this release.
 
 ## Usage
 
@@ -67,6 +78,13 @@ npm start
    - Updates the stored item list, re-runs fuzzy matching, and posts a correction note in the thread.
 3. Buyer completes the trade and runs `/rate` inside the thread (or anywhere with the `trade_id`).
 4. Anyone can run `/seller @User` to inspect the positive/negative tally.
+
+### Escort missions
+
+1. `/escort client:@Traveler route:"From Union HQ to Highroad" payment:"2x BP" notes:"Expect ARC resistance"`
+   - Bot creates `escort-escort-to-client` thread, invites both members, and logs mission details.
+2. Once the escort is done, either participant presses **Mark escort complete** inside the thread (or runs `/escort` again with completion subcommand in future iterations).
+3. Bot grants +1 rep to both escort and client and posts a confirmation inside the thread.
 
 ## Data storage
 
